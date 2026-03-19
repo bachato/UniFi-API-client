@@ -55,6 +55,7 @@ class Client
     protected bool   $is_logged_in               = false;
     protected bool   $is_unifi_os                = false;
     protected int    $exec_retries               = 0;
+    protected string $api_key                    = '';
     protected string $cookies                    = '';
     protected int    $cookies_created_at         = 0;
     protected        $last_results_raw           = null;
@@ -251,6 +252,11 @@ class Client
      */
     public function logout(): bool
     {
+        /** API key auth is stateless, no logout needed. */
+        if ($this->is_api_key_mode()) {
+            return true;
+        }
+
         /** Prepare cURL and options. */
         $ch = $this->get_curl_handle();
 
@@ -4228,6 +4234,45 @@ class Client
     }
 
     /**
+     * Enable API key authentication. When set, the client uses stateless API key auth instead of
+     * username/password login. API keys are only supported on UniFi OS-based controllers.
+     *
+     * @param string $api_key the API key generated in the UniFi OS console
+     * @throws \InvalidArgumentException when an empty API key is provided
+     */
+    public function set_api_key(string $api_key): void
+    {
+        $api_key = trim($api_key);
+        if (empty($api_key)) {
+            throw new \InvalidArgumentException('API key cannot be empty');
+        }
+
+        $this->api_key      = $api_key;
+        $this->is_unifi_os  = true;
+        $this->is_logged_in = true;
+    }
+
+    /**
+     * Get the current API key value.
+     *
+     * @return string the current API key, empty string if not set
+     */
+    public function get_api_key(): string
+    {
+        return $this->api_key;
+    }
+
+    /**
+     * Check whether the client is using API key authentication.
+     *
+     * @return bool true when API key mode is active
+     */
+    protected function is_api_key_mode(): bool
+    {
+        return !empty($this->api_key);
+    }
+
+    /**
      * Set value for the private property $connect_timeout.
      *
      * @param int $timeout new value for $connect_timeout in seconds
@@ -4693,8 +4738,19 @@ class Client
                 break;
         }
 
-        if ($this->is_unifi_os && $this->curl_method !== 'GET') {
+        if (!$this->is_api_key_mode() && $this->is_unifi_os && $this->curl_method !== 'GET') {
             $this->create_x_csrf_token_header();
+        }
+
+        /** Inject the API key header when in API key mode. */
+        if ($this->is_api_key_mode()) {
+            foreach ($this->curl_headers as $index => $header) {
+                if (stripos($header, 'x-api-key:') !== false) {
+                    unset($this->curl_headers[$index]);
+                }
+            }
+
+            $this->curl_headers[] = 'X-API-KEY: ' . $this->api_key;
         }
 
         $curl_options[CURLOPT_HTTPHEADER] = $this->curl_headers;
@@ -4721,6 +4777,13 @@ class Client
          * re-login is required.
          */
         if ($http_code === 401) {
+            if ($this->is_api_key_mode()) {
+                throw new LoginFailedException(
+                    'API key rejected by the controller (HTTP 401). Verify the key is valid and has the required permissions.',
+                    $http_code
+                );
+            }
+
             if ($this->debug) {
                 error_log(__FUNCTION__ . ': need to re-login to UniFi controller');
             }

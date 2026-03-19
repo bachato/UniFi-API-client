@@ -43,10 +43,10 @@ easy inclusion in your projects. See the [installation instructions](#Installati
   - PHP cURL (`php-curl`) module enabled
   - direct network connectivity between this server/desktop and the host and port where the UniFi Network Application is
     running (usually TCP port 8443, port 11443 for UniFi OS Server, or port 443 for UniFi OS consoles)
-- you **must** use an admin **account with local access permissions** to access the API through this class as explained
-  here:  
+- you **must** use an admin **account with local access permissions** to access the API through this API Client class
+  as explained here:  
   https://artofwifi.net/blog/use-local-admin-account-unifi-api-captive-portal
-- do **not** use UniFi Cloud accounts and do not enable MFA/2FA for the accounts that you use with this class
+- do **not** use UniFi Cloud accounts and do not enable MFA/2FA for the accounts that you use with this API Client class
 
 
 ## UniFi OS Support
@@ -67,7 +67,8 @@ applications/devices/services have been verified to work:
 - Official UniFi Hosting, details [here](https://help.ui.com/hc/en-us/articles/4415364143511)
 - HostiFi UniFi Cloud Hosting, details [here](https://hostifi.com/unifi)
 
-The class automatically detects UniFi OS consoles/servers and adjusts URLs and several functions/methods accordingly.
+The API Client automatically detects UniFi OS consoles/servers and adjusts URLs and several functions/methods
+accordingly.
 
 UniFi OS-based consoles require you to connect using port **443** while **8443** which is used for
 the self-hosted/software-based controllers. When connecting to **UniFi OS Server**, you are required to use port
@@ -87,10 +88,10 @@ https://artofwifi.net/blog/how-to-access-the-unifi-controller-by-wan-ip-or-hostn
 ## Upgrading from previous versions
 
 When upgrading from a version before **2.0.0**, please:
-- change your code to use the new Exceptions that are thrown by the class
+- change your code to use the new Exceptions that are thrown by the API Client class
 - test the client with your code for any breaking changes
-- make sure you are using [Composer](#composer) to install the class because the code is no longer held within a single
-  file
+- make sure you are using [Composer](#composer) to install the API Client because the code is no longer held within a
+  single file
 - see the note [here](#looking-for-version-1xx) regarding the single file version (1.x.x) of the API client
 
 
@@ -145,6 +146,31 @@ $results          = $unifi_connection->list_alarms(); // returns a PHP array con
 ```
 
 
+### API Key Authentication
+
+Starting from version **2.1.0**, the API client supports API key authentication for UniFi OS-based controllers.
+API keys provide stateless authentication without the need for login/logout flows.
+
+```php
+/**
+ * load the class using the composer autoloader
+ */
+require_once 'vendor/autoload.php';
+
+/**
+ * initialize the UniFi API connection class and set the API key
+ */
+$unifi_connection = new UniFi_API\Client('', '', 'https://unifi:443', 'default');
+$unifi_connection->set_api_key('your-api-key-here');
+$results = $unifi_connection->list_alarms(); // no login() needed
+```
+
+**Notes:**
+- API keys are only available on **UniFi OS-based** consoles (UDM, UDR, UCG, UniFi OS Server, etc.)
+- Generate API keys in the UniFi OS console under **Settings > Admins & Users > API Keys**
+- No `login()` or `logout()` calls are needed (calling them is harmless)
+- The client automatically configures itself for UniFi OS when an API key is set
+
 #### IMPORTANT NOTES:
 
 1. In the above example, `$site_id` is the short site "name" (usually 8 characters long) that is visible in the URL when
@@ -171,8 +197,8 @@ More code examples are available in the [`examples/`](examples/) directory.
 
 ## Exception handling
 
-The class now throws **Exceptions** for various error conditions instead of using PHP's `trigger_error()` function. This
-allows for more granular error handling in your application code.
+The API Client class throws **Exceptions** for various error conditions instead of using PHP's `trigger_error()`
+function. This allows for more granular error handling in your application code.
 
 You can also choose to catch the `UniFi_API\Exceptions\UnifiApiException` Exception to catch all Exceptions that
 might be thrown by the API Client class.
@@ -245,8 +271,8 @@ Exception handling.
 
 ## Functions/methods supported
 
-The class currently supports a large and growing number of functions/methods to access the UniFi Controller API. 
-Please refer to the comments/PHP DocBlocks in the source code for more details on each of the functions/methods,
+The API Client class currently supports a large and growing number of functions/methods to access the UniFi Controller
+API. Please refer to the comments/PHP DocBlocks in the source code for more details on each of the functions/methods,
 their purpose, and their respective parameters.
 
 If you are using an advanced IDE such as PHPStorm or VS Code, you can use its code completion and other
@@ -259,7 +285,7 @@ For a quick overview of the available functions/methods, you can also check the 
 ## Need help or have suggestions?
 
 There is still work to be done to add functionality and further improve the usability of
-this class, so all suggestions/comments are welcome. Please use the GitHub
+this API Client class, so all suggestions/comments are welcome. Please use the GitHub
 [Issues section](https://github.com/Art-of-WiFi/UniFi-API-client/issues) or the Ubiquiti
 Community forums (https://community.ui.com/questions/PHP-client-class-to-access-the-UniFi-controller-API-updates-and-discussion-part-2/a793904e-6023-4a7f-bcae-340db2a03fc1)
 to share your suggestions and questions.
@@ -295,7 +321,7 @@ Whenever necessary, we will make sure to update the **version_1** branch with th
 
 ## Credits
 
-This class is based on the initial work by the following developers:
+This API Client class is based on the initial work by the following developers:
 
 - domwo: https://community.ui.com/questions/little-php-class-for-unifi-api/933d3fb3-b401-4499-993a-f9af079a4a3a
 - fbagnol: https://github.com/fbagnol/class.unifi.php

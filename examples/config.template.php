@@ -18,6 +18,15 @@ $controllerurl      = ''; // full url to the UniFi Controller, eg. 'https://22.2
 $controllerversion  = ''; // the version of the Controller software, e.g. '4.6.6' (must be at least 4.0.0)
 
 /**
+ * API key authentication (optional, UniFi OS only)
+ * ===============================
+ * If you prefer to use API key authentication instead of username/password, set the API key below.
+ * When set, the username and password above are ignored. Generate an API key in the UniFi OS console
+ * under Integrations > Create New API Key.
+ */
+$controllerapikey = ''; // API key for UniFi OS-based controllers (leave empty to use username/password)
+
+/**
  * set to true (without quotes) to enable debug output to the browser and the PHP error log
  */
 $debug = false;

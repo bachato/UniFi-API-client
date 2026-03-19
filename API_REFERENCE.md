@@ -2252,6 +2252,26 @@ Gets or sets SSL verification settings.
 
 **Returns:** Current setting value
 
+### Get/Set API Key
+```php
+public function set_api_key(string $api_key): void
+public function get_api_key(): string
+```
+Enables API key authentication. When set, the client uses stateless API key auth instead of username/password login. API keys are only supported on UniFi OS-based controllers.
+
+**Parameters (set_api_key):**
+- `$api_key` (string): API key generated in the UniFi OS console
+
+**Returns (get_api_key):** string - Current API key, empty string if not set
+
+**Throws (set_api_key):**
+- `\InvalidArgumentException` when an empty API key is provided
+
+**Notes:**
+- Calling `set_api_key()` automatically sets the UniFi OS flag to `true` and marks the client as ready for requests
+- No `login()` or `logout()` calls are needed (calling them is harmless)
+- Generate API keys in the UniFi OS console under **Integrations > Create New API Key**
+
 ### Get/Set UniFi OS Flag
 ```php
 public function get_is_unifi_os(): bool
@@ -2318,7 +2338,7 @@ Retrieves the version of this API client class.
 
 ## Notes
 
-- Most methods require a successful login() before use
+- Most methods require a successful login() before use, or an API key to be set via `set_api_key()`
 - Methods that accept the `$site_id` parameter typically default to the current site if not specified
 - Many methods accept flexible `$payload` parameters that should be structured like their corresponding list/get methods
 - Boolean return values typically indicate success (true) or failure (false)
