@@ -20,3 +20,4 @@ TODO.md
 
 # ignore Claude Code files
 CLAUDE*.md
+.claude/

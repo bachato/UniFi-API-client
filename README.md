@@ -29,24 +29,25 @@ easy inclusion in your projects. See the [installation instructions](#Installati
 
 ## Supported Versions
 
-| Software                             | Versions                                                  |
-|--------------------------------------|-----------------------------------------------------------|
-| UniFi Network Application/controller | 5.x, 6.x, 7.x, 8.x, 9.x, 10.x (**10.0.154 is confirmed**) |
-| UniFi OS                             | 3.x, 4.x, 5.x (**5.0.5 is confirmed**)                    |
+| Software                             | Versions                                                 |
+|--------------------------------------|----------------------------------------------------------|
+| UniFi Network Application/controller | 5.x, 6.x, 7.x, 8.x, 9.x, 10.x (**10.2.97 is confirmed**) |
+| UniFi OS                             | 3.x, 4.x, 5.x (**5.1.3 is confirmed**)                   |
 
 
 ## Requirements
 
 - a server or desktop with:
-  - PHP **7.4.0** or higher (use version [1.1.83](https://github.com/Art-of-WiFi/UniFi-API-client/releases/tag/v1.1.83) 
+  - PHP **7.4.0** or higher (use version [1.1.83](https://github.com/Art-of-WiFi/UniFi-API-client/releases/tag/v1.1.83)
     for PHP 7.3.x and lower)
   - PHP cURL (`php-curl`) module enabled
   - direct network connectivity between this server/desktop and the host and port where the UniFi Network Application is
     running (usually TCP port 8443, port 11443 for UniFi OS Server, or port 443 for UniFi OS consoles)
-- you **must** use an admin **account with local access permissions** to access the API through this API Client class
-  as explained here:  
-  https://artofwifi.net/blog/use-local-admin-account-unifi-api-captive-portal
-- do **not** use UniFi Cloud accounts and do not enable MFA/2FA for the accounts that you use with this API Client class
+- **authentication** — you need one of the following:
+  - an admin **account with local access permissions** as explained
+    here: https://artofwifi.net/blog/use-local-admin-account-unifi-api-captive-portal
+    Do **not** use UniFi Cloud accounts and do not enable MFA/2FA for these accounts.
+  - **or** an **API key** generated in your UniFi OS console or UniFi OS Server (see [Authentication](#authentication) below)
 
 
 ## UniFi OS Support
@@ -126,50 +127,104 @@ Finally, be sure to include the composer autoloader in your code if your framewo
 require_once 'vendor/autoload.php';
 ```
 
-## Example usage
+## Authentication
 
-A quick and basic example of how to use the class:
+The API client supports two authentication methods. Choose the one that fits your setup.
 
-```php
-/**
- * load the class using the composer autoloader
- */
-require_once 'vendor/autoload.php';
+### Option 1: API Key (recommended for UniFi OS)
 
-/**
- * initialize the UniFi API connection class, log in to the controller and request the alarms collection
- * (this example assumes you have already assigned the correct values to the variables used)
- */
-$unifi_connection = new UniFi_API\Client($controller_user, $controller_password, $controller_url, $site_id, $controller_version, true);
-$login            = $unifi_connection->login();
-$results          = $unifi_connection->list_alarms(); // returns a PHP array containing alarm objects
-```
-
-
-### API Key Authentication
-
-Starting from version **2.1.0**, the API client supports API key authentication for UniFi OS-based controllers.
-API keys provide stateless authentication without the need for login/logout flows.
+API key authentication is **stateless** — no login/logout flow is needed. This is the simplest way to
+get started with UniFi OS-based controllers.
 
 ```php
-/**
- * load the class using the composer autoloader
- */
 require_once 'vendor/autoload.php';
 
-/**
- * initialize the UniFi API connection class and set the API key
- */
 $unifi_connection = new UniFi_API\Client('', '', 'https://unifi:443', 'default');
 $unifi_connection->set_api_key('your-api-key-here');
 $results = $unifi_connection->list_alarms(); // no login() needed
 ```
 
-**Notes:**
-- API keys are only available on **UniFi OS-based** consoles (UDM, UDR, UCG, UniFi OS Server, etc.)
-- Generate API keys in the UniFi OS console under **Settings > Admins & Users > API Keys**
-- No `login()` or `logout()` calls are needed (calling them is harmless)
+**How to generate an API key:**
+1. Open your UniFi OS console in a browser
+2. Navigate to **Integrations** in the sidebar menu
+3. Click **Create New API Key**
+4. Copy the generated key — it will not be shown again
+
+The API key inherits the permissions from the admin user that created it.
+
+**Key points:**
+- API keys are only available on **UniFi OS-based** consoles (UDM, UDR, UCG, UX, UDW, UCG-Ultra,
+  UniFi OS Server, etc.)
+- No `login()` or `logout()` calls are needed (calling them is harmless and will be ignored)
 - The client automatically configures itself for UniFi OS when an API key is set
+
+
+### Option 2: Username/Password
+
+The traditional authentication method that works with both self-hosted controllers and UniFi OS consoles.
+
+```php
+require_once 'vendor/autoload.php';
+
+$unifi_connection = new UniFi_API\Client(
+    $controller_user,
+    $controller_password,
+    $controller_url,
+    $site_id
+);
+
+$login   = $unifi_connection->login();
+$results = $unifi_connection->list_alarms();
+```
+
+**Requirements for username/password authentication:**
+- You **must** use a local admin account with **local access permissions** as explained
+  here: https://artofwifi.net/blog/use-local-admin-account-unifi-api-captive-portal
+- Do **not** use UniFi Cloud accounts
+- Do **not** enable MFA/2FA on accounts used with this client
+
+
+### When to use which method?
+
+| Scenario                                              | Method |
+|-------------------------------------------------------|---|
+| Controller is part of a **UniFi Fabric**              | API key (**required**) |
+| UniFi OS console (UDM, UDR, UCG, etc.)                | API key (recommended) or username/password |
+| UniFi OS Server                                       | API key (recommended) or username/password |
+| Self-hosted Network Application (non-UniFi OS Server) | Username/password (API keys are not supported) |
+
+> **Important:** When your controller is a member of a **UniFi Fabric**, username/password authentication
+> is **not available**. You **must** use API key authentication. UniFi Fabric uses centralized identity
+> management which does not support local login sessions through the API.
+
+
+### Migrating from username/password to API keys
+
+If you have existing code using username/password authentication and want to switch to API keys,
+the changes are minimal:
+
+**Before (username/password):**
+```php
+$unifi_connection = new UniFi_API\Client($user, $password, $url, $site_id);
+$unifi_connection->login();
+$results = $unifi_connection->list_alarms();
+$unifi_connection->logout();
+```
+
+**After (API key):**
+```php
+$unifi_connection = new UniFi_API\Client('', '', $url, $site_id);
+$unifi_connection->set_api_key($api_key);
+$results = $unifi_connection->list_alarms();
+```
+
+**What changes:**
+1. Pass empty strings for the `$user` and `$password` constructor parameters
+2. Call `set_api_key()` instead of `login()`
+3. Remove `logout()` calls (or leave them — they will be silently ignored)
+4. In your exception handling, `LoginFailedException` and `LoginRequiredException` will no longer occur;
+   you can keep or remove those catch blocks as you prefer
+
 
 #### IMPORTANT NOTES:
 
@@ -328,7 +383,7 @@ This API Client class is based on the initial work by the following developers:
 
 and the API as published by Ubiquiti:
 
-- https://dl.ui.com/unifi/8.6.9/unifi_sh_api
+- https://dl.ui.com/unifi/9.5.21/unifi_sh_api
 
 ## Contributors
 
@@ -346,7 +401,7 @@ Art of WiFi develops software and tools that enhance the capabilities of UniFi n
 reporting solutions to device search utilities, our goal is to make UniFi deployments more powerful and easier to
 manage.
 
-If you're looking for a specific solution or just want to see what else we offer, feel free to explore our web site:
+If you're looking for a specific solution or just want to see what else we offer, feel free to explore our website:
 - https://www.artofwifi.net
 
 
