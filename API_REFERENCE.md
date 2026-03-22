@@ -89,6 +89,67 @@ Logs out from the UniFi controller.
 - `CurlGeneralErrorException`
 - `CurlTimeoutException`
 
+### Connect via Site Manager
+```php
+public static function connect_via_site_manager(string $console_id, string $api_key, string $site = 'default')
+```
+Creates a Client instance configured for Site Manager proxy mode. All API requests are routed through the Ubiquiti Site Manager cloud proxy at `api.ui.com` instead of connecting directly to a controller. No `login()` call is needed.
+
+**Parameters:**
+- `$console_id` (string): Console host ID, visible in the `unifi.ui.com` URL: `https://unifi.ui.com/consoles/{console_id}/network/default/dashboard`
+- `$api_key` (string): Site Manager API key (not the local controller API key)
+- `$site` (string): Short site name (default: 'default')
+
+**Returns:** Client instance configured for proxy mode
+
+**Throws:**
+- `\InvalidArgumentException` when `$console_id` or `$api_key` is empty
+- `CurlExtensionNotLoadedException`
+- `InvalidSiteNameException`
+
+**Notes:**
+- The console must be online, running firmware >= 5.0.3, and accessible to the API key owner
+- Non-organization API keys can only access the key owner's consoles
+- Organization API keys can access any console within the organization
+- All 200+ API methods work transparently through the proxy
+
+### Enable Site Manager Proxy
+```php
+public function enable_site_manager_proxy(string $console_id, string $api_key): void
+```
+Enables Site Manager proxy mode on an existing client instance. When enabled, all API requests are routed through the Site Manager cloud proxy.
+
+**Parameters:**
+- `$console_id` (string): Console host ID
+- `$api_key` (string): Site Manager API key
+
+**Throws:**
+- `\InvalidArgumentException` when `$console_id` or `$api_key` is empty
+
+### Disable Site Manager Proxy
+```php
+public function disable_site_manager_proxy(): void
+```
+Disables Site Manager proxy mode. After disabling, the client must be re-configured (`login()`, `set_api_key()`, etc.) before making direct API calls. Resets `$is_logged_in` and `$is_unifi_os` to `false`.
+
+### Is Site Manager Proxy Enabled
+```php
+public function is_site_manager_proxy_enabled(): bool
+```
+Checks whether Site Manager proxy mode is currently enabled.
+
+**Returns:** bool - true when proxy mode is active
+
+### Get Site Manager Console ID
+```php
+public function get_site_manager_console_id(): string
+```
+Gets the current Site Manager console ID.
+
+**Returns:** string - Console ID, empty string if not set
+
+---
+
 ## Client Management
 
 ### List Clients
@@ -2338,7 +2399,7 @@ Retrieves the version of this API client class.
 
 ## Notes
 
-- Most methods require a successful login() before use, or an API key to be set via `set_api_key()`
+- Most methods require a successful `login()` before use, an API key to be set via `set_api_key()`, or Site Manager proxy mode enabled via `connect_via_site_manager()` or `enable_site_manager_proxy()`
 - Methods that accept the `$site_id` parameter typically default to the current site if not specified
 - Many methods accept flexible `$payload` parameters that should be structured like their corresponding list/get methods
 - Boolean return values typically indicate success (true) or failure (false)

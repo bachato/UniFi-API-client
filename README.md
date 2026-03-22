@@ -47,7 +47,9 @@ easy inclusion in your projects. See the [installation instructions](#Installati
   - an admin **account with local access permissions** as explained
     here: https://artofwifi.net/blog/use-local-admin-account-unifi-api-captive-portal
     Do **not** use UniFi Cloud accounts and do not enable MFA/2FA for these accounts.
-  - **or** an **API key** generated in your UniFi OS console or UniFi OS Server (see [Authentication](#authentication) below)
+    (see [Option 2: Username/Password](#option-2-usernamepassword) below)
+  - **or** an **API key** generated in your UniFi OS console or UniFi OS Server (see [Option 1: API Key](#option-1-api-key-recommended-for-unifi-os) below)
+  - **or** a **Site Manager API key** for routing requests through the Ubiquiti cloud proxy (see [Option 3: Site Manager Proxy](#option-3-site-manager-proxy) below)
 
 
 ## UniFi OS Support
@@ -184,6 +186,68 @@ $results = $unifi_connection->list_alarms();
 - Do **not** enable MFA/2FA on accounts used with this client
 
 
+### Option 3: Site Manager Proxy
+
+If your console is managed through [unifi.ui.com](https://unifi.ui.com) and you don't have a direct
+network path to it, you can route API requests through the **Ubiquiti Site Manager cloud proxy**. This
+uses the [Site Manager API](https://developer.ui.com) connector to reach the console via UI.com's cloud
+infrastructure.
+
+```php
+require_once 'vendor/autoload.php';
+
+$client = UniFi_API\Client::connect_via_site_manager(
+    '245A4CA234150000000005F23204000000000638FE970000000061156371:48913759', // console ID
+    'your-site-manager-api-key',                                              // Site Manager API key
+    'default'                                                                  // site (optional)
+);
+
+// No login() needed — proxy mode is stateless
+$stats = $client->stat_daily_site();
+```
+
+**Finding the console ID:**
+The console ID (host ID) is visible in the URL when managing a console via `unifi.ui.com`:
+```
+https://unifi.ui.com/consoles/{console_id}/network/default/dashboard
+```
+
+**Site Manager API key:**
+Generate a Site Manager API key at https://unifi.ui.com under your account settings.
+This is **not** the same as a local controller API key generated in the UniFi OS console.
+
+**Requirements:**
+- Console firmware version must be >= 5.0.3
+- Console must be online and connected to UI.com
+- For non-organization API keys: limited to the API key owner's consoles only
+- For organization API keys: can access any console within the organization
+
+**You can also enable/disable proxy mode on an existing client instance:**
+
+```php
+$client = new UniFi_API\Client('', '', 'https://127.0.0.1', 'default');
+$client->enable_site_manager_proxy($console_id, $site_manager_api_key);
+
+// ... make API calls through the proxy ...
+
+$client->disable_site_manager_proxy();
+// Client must be re-configured (login, set_api_key, etc.) before making direct calls
+```
+
+**SSL verification:**
+In proxy mode, all requests go to `api.ui.com` which has a valid public CA certificate. SSL peer and host
+verification is automatically enforced.
+
+**Performance note:**
+Proxied requests add ~800ms of latency compared to direct access due to the cloud hop. Use direct
+access when available. The proxy is best suited for remote/headless deployments where a direct network
+path does not exist.
+
+**Rate limits:**
+The Site Manager API enforces rate limits (10,000 requests/minute for v1 stable). When exceeded,
+the API returns HTTP 429 with a `Retry-After` header.
+
+
 ### When to use which method?
 
 | Scenario                                              | Method |
@@ -192,6 +256,7 @@ $results = $unifi_connection->list_alarms();
 | UniFi OS console (UDM, UDR, UCG, etc.)                | API key (recommended) or username/password |
 | UniFi OS Server                                       | API key (recommended) or username/password |
 | Self-hosted Network Application (non-UniFi OS Server) | Username/password (API keys are not supported) |
+| Remote console via UI.com (no direct network path)    | Site Manager proxy |
 
 > **Important:** When your controller is a member of a **UniFi Fabric**, username/password authentication
 > is **not available**. You **must** use API key authentication. UniFi Fabric uses centralized identity
@@ -264,6 +329,7 @@ Here is an example of how to catch each of the Exceptions individually:
 /**
  * PHP API usage example with Exception handling
  */
+use UniFi_API\Exceptions\ConsoleOfflineException;
 use UniFi_API\Exceptions\CurlExtensionNotLoadedException;
 use UniFi_API\Exceptions\CurlGeneralErrorException;
 use UniFi_API\Exceptions\CurlTimeoutException;
@@ -301,6 +367,8 @@ try {
     echo 'JsonDecodeException: ' . $e->getMessage(). PHP_EOL;
 } catch (LoginRequiredException $e) {
     echo 'LoginRequiredException: ' . $e->getMessage(). PHP_EOL;
+} catch (ConsoleOfflineException $e) {
+    echo 'ConsoleOfflineException: ' . $e->getMessage(). PHP_EOL;
 } catch (CurlGeneralErrorException $e) {
     echo 'CurlGeneralErrorException: ' . $e->getMessage(). PHP_EOL;
 } catch (CurlTimeoutException $e) {
