@@ -3,6 +3,7 @@
 namespace UniFi_API;
 
 use Exception;
+use UniFi_API\Exceptions\ConsoleOfflineException;
 use UniFi_API\Exceptions\CurlGeneralErrorException;
 use UniFi_API\Exceptions\CurlExtensionNotLoadedException;
 use UniFi_API\Exceptions\CurlTimeoutException;
@@ -36,9 +37,12 @@ use UniFi_API\Exceptions\NotAUnifiOsConsoleException;
 class Client
 {
     /** Constants. */
-    const CLASS_VERSION        = '2.1.0';
+    const CLASS_VERSION        = '2.2.0';
     const CURL_METHODS_ALLOWED = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
     const DEFAULT_CURL_METHOD  = 'GET';
+
+    /** Site Manager proxy base URL. */
+    protected const SITE_MANAGER_BASE_URL = 'https://api.ui.com';
 
     /**
      * Protected properties.
@@ -56,6 +60,9 @@ class Client
     protected bool   $is_unifi_os                = false;
     protected int    $exec_retries               = 0;
     protected string $api_key                    = '';
+    protected bool   $is_site_manager_proxy      = false;
+    protected string $site_manager_console_id    = '';
+    protected string $site_manager_api_key       = '';
     protected string $cookies                    = '';
     protected int    $cookies_created_at         = 0;
     protected        $last_results_raw           = null;
@@ -159,6 +166,11 @@ class Client
      */
     public function login(): bool
     {
+        /** Site Manager proxy mode is stateless, no login needed. */
+        if ($this->is_site_manager_proxy) {
+            return true;
+        }
+
         /** Skip the login process if already logged in. */
         if ($this->update_unificookie()) {
             $this->is_logged_in = true;
@@ -252,6 +264,11 @@ class Client
      */
     public function logout(): bool
     {
+        /** Site Manager proxy mode is stateless, no logout needed. */
+        if ($this->is_site_manager_proxy) {
+            return true;
+        }
+
         /** API key auth is stateless, no logout needed. */
         if ($this->is_api_key_mode()) {
             return true;
@@ -4273,6 +4290,97 @@ class Client
     }
 
     /**
+     * Create a Client instance configured for Site Manager proxy mode.
+     *
+     * All API requests are routed through the Ubiquiti Site Manager cloud proxy at api.ui.com
+     * instead of connecting directly to a controller. No login() call is needed.
+     *
+     * @note The console must be online, running firmware >= 5.0.3, and accessible to the API key owner.
+     *       Non-organization API keys can only access the key owner's consoles.
+     *       Organization API keys can access any console within the organization.
+     * @param string $console_id the console host ID, visible in the unifi.ui.com URL:
+     *                           https://unifi.ui.com/consoles/{console_id}/network/default/dashboard
+     * @param string $api_key Site Manager API key (not the local controller API key)
+     * @param string $site optional, short site name, defaults to 'default'
+     * @return static a fully configured proxy-mode client instance
+     * @throws \InvalidArgumentException when $console_id or $api_key is empty
+     */
+    public static function connect_via_site_manager(string $console_id, string $api_key, string $site = 'default')
+    {
+        $instance = new static('', '', 'https://127.0.0.1:8443', $site);
+        $instance->enable_site_manager_proxy($console_id, $api_key);
+
+        return $instance;
+    }
+
+    /**
+     * Enable Site Manager proxy mode.
+     *
+     * When enabled, all API requests are routed through the Ubiquiti Site Manager cloud proxy
+     * (api.ui.com) using the connector endpoint. The client becomes stateless — no login/logout
+     * or CSRF token management is needed.
+     *
+     * @note The console must be online, running firmware >= 5.0.3, and accessible to the API key owner.
+     * @param string $console_id the console host ID
+     * @param string $api_key Site Manager API key
+     * @throws \InvalidArgumentException when $console_id or $api_key is empty
+     */
+    public function enable_site_manager_proxy(string $console_id, string $api_key): void
+    {
+        $console_id = trim($console_id);
+        $api_key    = trim($api_key);
+
+        if (empty($console_id)) {
+            throw new \InvalidArgumentException('Console ID cannot be empty');
+        }
+
+        if (empty($api_key)) {
+            throw new \InvalidArgumentException('Site Manager API key cannot be empty');
+        }
+
+        $this->is_site_manager_proxy   = true;
+        $this->site_manager_console_id = $console_id;
+        $this->site_manager_api_key    = $api_key;
+        $this->is_unifi_os             = true;
+        $this->is_logged_in            = true;
+    }
+
+    /**
+     * Disable Site Manager proxy mode.
+     *
+     * After disabling, the client must be re-configured (login, set_api_key, etc.) before
+     * making direct API calls.
+     */
+    public function disable_site_manager_proxy(): void
+    {
+        $this->is_site_manager_proxy   = false;
+        $this->site_manager_console_id = '';
+        $this->site_manager_api_key    = '';
+        $this->is_unifi_os             = false;
+        $this->is_logged_in            = false;
+    }
+
+    /**
+     * Check whether Site Manager proxy mode is enabled.
+     *
+     * @return bool true when proxy mode is active
+     */
+    public function is_site_manager_proxy_enabled(): bool
+    {
+        return $this->is_site_manager_proxy;
+    }
+
+    /**
+     * Get the current Site Manager console ID.
+     *
+     * @return string the console ID, empty string if not set
+     */
+    public function get_site_manager_console_id(): string
+    {
+        return $this->site_manager_console_id;
+    }
+
+    /**
      * Set value for the private property $connect_timeout.
      *
      * @param int $timeout new value for $connect_timeout in seconds
@@ -4688,7 +4796,7 @@ class Client
      * @param object|array|null $payload optional, payload to pass with the request
      * @param bool $prefix_path optional, determines if the path should be prefixed for UniFi OS consoles
      * @return bool|string response returned by the controller API
-     * @throws CurlGeneralErrorException|CurlTimeoutException|InvalidCurlMethodException|LoginFailedException
+     * @throws CurlGeneralErrorException|CurlTimeoutException|InvalidCurlMethodException|LoginFailedException|ConsoleOfflineException
      */
     protected function exec_curl(string $path, $payload = null, $prefix_path = true)
     {
@@ -4696,10 +4804,19 @@ class Client
             throw new InvalidCurlMethodException();
         }
 
-        $url = $this->baseurl . $path;
+        if ($this->is_site_manager_proxy) {
+            $connector_base = self::SITE_MANAGER_BASE_URL
+                            . '/v1/connector/consoles/' . $this->site_manager_console_id;
 
-        if ($this->is_unifi_os && $prefix_path) {
+            if ($prefix_path) {
+                $url = $connector_base . '/network' . $path;
+            } else {
+                $url = $connector_base . $path;
+            }
+        } elseif ($this->is_unifi_os && $prefix_path) {
             $url = $this->baseurl . '/proxy/network' . $path;
+        } else {
+            $url = $this->baseurl . $path;
         }
 
         $ch = $this->get_curl_handle();
@@ -4738,12 +4855,20 @@ class Client
                 break;
         }
 
-        if (!$this->is_api_key_mode() && $this->is_unifi_os && $this->curl_method !== 'GET') {
+        if (!$this->is_api_key_mode() && !$this->is_site_manager_proxy && $this->is_unifi_os && $this->curl_method !== 'GET') {
             $this->create_x_csrf_token_header();
         }
 
-        /** Inject the API key header when in API key mode. */
-        if ($this->is_api_key_mode()) {
+        /** Inject the appropriate API key header. Site Manager proxy takes precedence. */
+        if ($this->is_site_manager_proxy) {
+            foreach ($this->curl_headers as $index => $header) {
+                if (stripos($header, 'x-api-key:') !== false) {
+                    unset($this->curl_headers[$index]);
+                }
+            }
+
+            $this->curl_headers[] = 'X-API-KEY: ' . $this->site_manager_api_key;
+        } elseif ($this->is_api_key_mode()) {
             foreach ($this->curl_headers as $index => $header) {
                 if (stripos($header, 'x-api-key:') !== false) {
                     unset($this->curl_headers[$index]);
@@ -4756,6 +4881,12 @@ class Client
         $curl_options[CURLOPT_HTTPHEADER] = $this->curl_headers;
 
         curl_setopt_array($ch, $curl_options);
+
+        /** In proxy mode, enforce SSL verification for api.ui.com (valid public CA certificate). */
+        if ($this->is_site_manager_proxy) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        }
 
         /** Execute the cURL request. */
         $response = curl_exec($ch);
@@ -4772,11 +4903,26 @@ class Client
             throw new CurlGeneralErrorException('cURL error: ' . curl_error($ch), $http_code, curl_getinfo($ch));
         }
 
+        /** In proxy mode, HTTP 408 means the console is offline or unreachable. */
+        if ($http_code === 408 && $this->is_site_manager_proxy) {
+            throw new ConsoleOfflineException(
+                'Console did not respond via the Site Manager proxy (HTTP 408). The console may be offline or running firmware < 5.0.3.',
+                $http_code
+            );
+        }
+
         /**
          * An HTTP response code 401 (Unauthorized) indicates the Cookie/Token has expired, in which case
          * re-login is required.
          */
         if ($http_code === 401) {
+            if ($this->is_site_manager_proxy) {
+                throw new LoginFailedException(
+                    'Site Manager API key rejected (HTTP 401). Verify the key is valid and has access to this console.',
+                    $http_code
+                );
+            }
+
             if ($this->is_api_key_mode()) {
                 throw new LoginFailedException(
                     'API key rejected by the controller (HTTP 401). Verify the key is valid and has the required permissions.',
